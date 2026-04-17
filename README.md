@@ -60,15 +60,15 @@ make
 ```
 
 ## Team Members 👥
-Mustafa Younis (Team Leader)
-Youssef Mohammed
-Lmiaa
-Manar
-Maram Ahmed
-Seif
-Karim 
-Abdelrahman Mohammed
-Youssef Saied
+Mustafa Younis (Team Leader)<br>
+Youssef Mohammed<br>
+Lmiaa<br>
+Manar<br>
+Maram Ahmed<br>
+Seif<br>
+Karim <br>
+Abdelrahman Mohammed<br>
+Youssef Saied<br>
 
 ## Author 👤
 Mustafa Younis
