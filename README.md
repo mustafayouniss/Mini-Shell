@@ -47,7 +47,7 @@ Mini-Shell simulates basic shell behavior and helps understand core Operating Sy
 ├── signals.c          📡 Signal handling (Ctrl+C, etc.)
 ├── signals.h          📄 Signal declarations
 │
-├── make               🏗️ Build the project using make
+├── Makefile           🏗️ Build the project using make
 │
 ├── README.md          📄 Documentation
 
