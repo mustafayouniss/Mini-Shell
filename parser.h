@@ -15,6 +15,5 @@ typedef struct Command {
 
 Command* parse_line(const char *input);
 void free_commands(Command *head);
-bool is_builtin(const char *cmd);
 
 #endif

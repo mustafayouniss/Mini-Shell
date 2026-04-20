@@ -83,8 +83,3 @@ void free_commands(Command *head) {
         head = next;
     }
 }
-
-bool is_builtin(const char *cmd) {
-    return cmd && (strcmp(cmd, "cd") == 0 || strcmp(cmd, "exit") == 0 ||
-                   strcmp(cmd, "pwd") == 0 || strcmp(cmd, "history") == 0);
-}
