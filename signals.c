@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 // Global variables
 volatile pid_t fg_child_pid = 0;
@@ -43,6 +45,22 @@ void sigtstp_handler(int sig) {
     }
 }
 
+// Handler for SIGCHLD - reaps background child processes (prevents zombies)
+static void sigchld_handler(int sig) {
+    (void)sig; // Suppress unused parameter warning
+    
+    // Save errno because waitpid might change it, and we don't want to mess up the main program
+    int saved_errno = errno; 
+    
+    // WNOHANG means "clean up any dead children, but DON'T wait if they are still running"
+    // -1 means "any child process"
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        // Just looping to clear all finished background processes
+    }
+    
+    errno = saved_errno; // Restore errno
+}
+
 // Setup signal handlers using sigaction
 void setup_signals(void) {
     struct sigaction sa_int, sa_tstp;
@@ -62,6 +80,19 @@ void setup_signals(void) {
     sigemptyset(&sa_tstp.sa_mask);
     if (sigaction(SIGTSTP, &sa_tstp, NULL) == -1) {
         perror("Failed to set SIGTSTP handler");
+        exit(EXIT_FAILURE);
+    }
+
+    // Setup SIGCHLD handler
+    struct sigaction sa_chld;
+    sa_chld.sa_handler = sigchld_handler;
+    // SA_RESTART: if a system call is interrupted, restart it. 
+    // SA_NOCLDSTOP: only notify us when child terminates, not when it stops/pauses.
+    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP; 
+    sigemptyset(&sa_chld.sa_mask);
+    
+    if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
+        perror("Failed to set SIGCHLD handler");
         exit(EXIT_FAILURE);
     }
 }
