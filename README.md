@@ -66,7 +66,7 @@ Mini-Shell simulates basic shell behavior and helps understand core Operating Sy
 ```
 📁Mini-Shell
 │
-├── mini_shell.c       🧩 Main entry point: handles the shell loop, prompt display, and overall program flow 
+├── myShell.c          🧩 Main entry point: handles the shell loop, prompt display, and overall program flow 
 │
 ├── parser.c           🔍 Parse input & detect commands/operators
 ├── parser.h           📄 Parser declarations
@@ -86,10 +86,10 @@ Mini-Shell simulates basic shell behavior and helps understand core Operating Sy
 
 ```
 ## How to Run ▶️
-### Compile the project then run executable file (mini-shell)
+### Compile the project then run executable file (myShell)
 ```bash
 make
-./mini_shell
+./myShell
 ```
 
 ## Team Members 👥

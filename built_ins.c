@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "builtins.h"
+#include "built_ins.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,9 +11,9 @@
 static char *history[MAX_HISTORY];
 static int history_count = 0;
 
-// ================= HISTORY =================
-
-void add_to_history(const char *cmd) {
+// Add command to history
+void add_to_history(const char *cmd)
+{
     if (!cmd || !*cmd) return;
 
     if (history_count == MAX_HISTORY) {
@@ -22,36 +22,41 @@ void add_to_history(const char *cmd) {
         history_count--;
     }
 
-    history[history_count++] = strdup(cmd);
+    char *dup = malloc(strlen(cmd) + 1);
+    if (dup) {
+        strcpy(dup, cmd);
+    }
+    history[history_count++] = dup;
 }
 
-void print_history(void) {
+// Print command history
+void print_history(void)
+{
     for (int i = 0; i < history_count; i++) {
         printf("%4d  %s\n", i + 1, history[i]);
     }
 }
 
-// ================= BUILTIN CHECK =================
-
-bool is_builtin(const char *cmd) {
-    if (!cmd) return 0;
+// Check if built-in command
+bool is_builtin(const char *cmd)
+{
+    if (!cmd) return false;
+    
     return strcmp(cmd, "cd") == 0 ||
            strcmp(cmd, "exit") == 0 ||
            strcmp(cmd, "pwd") == 0 ||
            strcmp(cmd, "history") == 0;
 }
 
-// ================= EXECUTION =================
-
-int execute_builtin(Command *cmd) {
+// Execute built-in command
+int execute_builtin(Command *cmd)
+{
     if (!cmd || !cmd->argv[0]) return 1;
 
-    // exit
     if (strcmp(cmd->argv[0], "exit") == 0) {
         exit(0);
     }
 
-    // pwd
     if (strcmp(cmd->argv[0], "pwd") == 0) {
         char buf[1024];
         if (getcwd(buf, sizeof(buf))) {
@@ -62,7 +67,6 @@ int execute_builtin(Command *cmd) {
         return 1;
     }
 
-    // cd
     if (strcmp(cmd->argv[0], "cd") == 0) {
         const char *dir = cmd->argc > 1 ? cmd->argv[1] : getenv("HOME");
 
@@ -77,7 +81,6 @@ int execute_builtin(Command *cmd) {
         return 1;
     }
 
-    // history
     if (strcmp(cmd->argv[0], "history") == 0) {
         print_history();
         return 1;

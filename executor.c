@@ -10,29 +10,26 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
+#include <time.h>
 
-/* ------------------------------------------------------------------ */
-/* apply_redir()                                                        */
-/* Called inside the child process, BEFORE execvp().                  */
-/* Opens redirection files and wires them over stdin/stdout.          */
-/* ------------------------------------------------------------------ */
+// Setup I/O redirection
 void apply_redir(Command *cmd)
 {
-    /* ── Input redirection: command < file ── */
+    // Input redirection
     if (cmd->input_redir) {
         int fd = open(cmd->input_redir, O_RDONLY);
         if (fd < 0) {
-            perror(cmd->input_redir);   /* e.g. "input.txt: No such file or directory" */
+            perror(cmd->input_redir);
             exit(1);
         }
         if (dup2(fd, STDIN_FILENO) < 0) {
             perror("dup2 input");
             exit(1);
         }
-        close(fd);   /* fd no longer needed; stdin now points to the file */
+        close(fd);
     }
 
-    /* ── Output redirection: command > file  or  command >> file ── */
+    // Output redirection
     if (cmd->output_redir) {
         int flags = O_WRONLY | O_CREAT;
         flags |= cmd->append ? O_APPEND : O_TRUNC;
@@ -46,18 +43,18 @@ void apply_redir(Command *cmd)
             perror("dup2 output");
             exit(1);
         }
-        close(fd);   /* fd no longer needed; stdout now points to the file */
+        close(fd);
     }
 }
-
-/* ------------------------------------------------------------------ */
-/* execute_command()                                                    */
-/* fork + apply_redir + execvp + waitpid for one external command.    */
-/* ------------------------------------------------------------------ */
 
 static void handle_background(pid_t pid)
 {
     printf("[bg] %d\n", pid);
+    
+    // Add a tiny delay so very fast background commands (like 'ls')
+    // can print their output before our next prompt is drawn.
+    struct timespec ts = {0, 50000000}; // 50 milliseconds
+    nanosleep(&ts, NULL);
 }
 
 static int wait_foreground(pid_t pid)
@@ -66,134 +63,116 @@ static int wait_foreground(pid_t pid)
 
     fg_child_pid = pid;
 
-    if (waitpid(pid, &status, 0) < 0)
-    {
-        if (errno != EINTR)
+    if (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
             perror("waitpid");
+        }
     }
 
     fg_child_pid = 0;
 
-    if (WIFEXITED(status))
+    if (WIFEXITED(status)) {
         return WEXITSTATUS(status);
+    }
 
     return 1;
 }
-/* ------------------------------------------------------------------ */
-/* Background & Foreground Process Management                */
-/*                                                                    */
-/* 1) Background Execution:                                            */
-/*    - If command ends with '&', the shell must NOT wait for it.      */
-/*    - We simply print the PID and return immediately to the prompt. */
-/*                                                                    */
-/* 2) Foreground Execution:                                            */
-/*    - If command runs normally, the shell must wait until it ends.  */
-/*    - We store its PID in fg_child_pid so SIGINT handler (Ctrl+C)   */
-/*      can terminate ONLY the foreground process without exiting the */
-/*      shell itself.                                                 */
-/*                                                                    */
-/* This design keeps the code clean by separating waiting logic into  */
-/* a helper function (wait_foreground) and background printing logic  */
-/* into another helper (handle_background).                           */
-/* ------------------------------------------------------------------ */
+
+// Run one pipeline command
+static void execute_pipeline_child(Command *cmd, int i, int num_cmds, int pipes[][2])
+{
+    // Reset signals to default behavior in the child
+    signal(SIGINT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
+
+    // Connect stdin from the previous pipe
+    if (i > 0) {
+        dup2(pipes[i - 1][0], STDIN_FILENO);
+    }
+
+    // Connect stdout to the next pipe
+    if (i < num_cmds - 1) {
+        dup2(pipes[i][1], STDOUT_FILENO);
+    }
+
+    // Close all pipes in this child
+    for (int j = 0; j < num_cmds - 1; j++) {
+        close(pipes[j][0]);
+        close(pipes[j][1]);
+    }
+
+    apply_redir(cmd);
+    execvp(cmd->argv[0], cmd->argv);
+    
+    perror(cmd->argv[0]);
+    exit(127);
+}
+
 int execute_pipeline(Command *head)
 {
     int num_cmds = 0;
-    for (Command *c = head; c; c = c->next)
+    for (Command *c = head; c; c = c->next) {
         num_cmds++;
+    }
 
-    if (num_cmds == 0)
-        return 0;
+    if (num_cmds == 0) return 0;
 
     int pipes[num_cmds - 1][2];
     pid_t pids[num_cmds];
 
-    /* Create pipes */
-    for (int i = 0; i < num_cmds - 1; i++)
-    {
-        if (pipe(pipes[i]) == -1)
-        {
+    // Create all pipes
+    for (int i = 0; i < num_cmds - 1; i++) {
+        if (pipe(pipes[i]) == -1) {
             perror("pipe");
             return 1;
         }
     }
 
-    /* Fork each command */
-    for (int i = 0; i < num_cmds; i++)
-    {
-        Command *cmd = head;
-        for (int j = 0; j < i; j++)
-            cmd = cmd->next;
-
+    // Fork and execute each command in the pipeline
+    Command *cmd = head;
+    for (int i = 0; i < num_cmds; i++) {
         pids[i] = fork();
 
-        if (pids[i] < 0)
-        {
+        if (pids[i] < 0) {
             perror("fork");
             exit(1);
         }
 
-        if (pids[i] == 0)
-        {
-            /* Child process */
-            signal(SIGINT, SIG_DFL);
-            signal(SIGTSTP, SIG_DFL);
-
-            /* connect input */
-            if (i > 0)
-                dup2(pipes[i - 1][0], STDIN_FILENO);
-
-            /* connect output */
-            if (i < num_cmds - 1)
-                dup2(pipes[i][1], STDOUT_FILENO);
-
-            /* close all pipes */
-            for (int j = 0; j < num_cmds - 1; j++)
-            {
-                close(pipes[j][0]);
-                close(pipes[j][1]);
-            }
-
-            /* apply redirection */
-            apply_redir(cmd);
-
-            execvp(cmd->argv[0], cmd->argv);
-            perror(cmd->argv[0]);
-            exit(127);
+        if (pids[i] == 0) {
+            execute_pipeline_child(cmd, i, num_cmds, pipes);
         }
+        
+        cmd = cmd->next;
     }
 
-    /* Parent closes all pipes */
-    for (int i = 0; i < num_cmds - 1; i++)
-    {
+    // Parent must close all pipe ends
+    for (int i = 0; i < num_cmds - 1; i++) {
         close(pipes[i][0]);
         close(pipes[i][1]);
     }
 
-    /* Determine background flag (last command) */
+    // Check if the pipeline should run in the background
     Command *last = head;
-    while (last->next)
+    while (last->next) {
         last = last->next;
+    }
 
-    /* Background pipeline: do not wait */
-    if (last->background)
-    {
+    if (last->background) {
         handle_background(pids[num_cmds - 1]);
         return 0;
     }
 
-    /* Foreground pipeline: wait all */
+    // Wait for all foreground processes in the pipeline
     int status = 0;
     fg_child_pid = pids[num_cmds - 1];
 
-    for (int i = 0; i < num_cmds; i++)
+    for (int i = 0; i < num_cmds; i++) {
         waitpid(pids[i], &status, 0);
+    }
 
     fg_child_pid = 0;
-
     return 0;
 }
-
 
 int execute_command(Command *cmd)
 {
@@ -206,22 +185,22 @@ int execute_command(Command *cmd)
     }
 
     if (pid == 0) {
-        /* ── Child ── */
+        // Child execution
         signal(SIGINT, SIG_DFL);
         signal(SIGTSTP, SIG_DFL);
 
         apply_redir(cmd);
         execvp(cmd->argv[0], cmd->argv);
 
-        if (errno == ENOENT)
+        if (errno == ENOENT) {
             fprintf(stderr, "myShell: %s: command not found\n", cmd->argv[0]);
-        else
+        } else {
             perror(cmd->argv[0]);
-
+        }
         exit(127);
     }
 
-    /* ── Parent ── */
+    // Parent execution
     if (cmd->background) {
         handle_background(pid);
         return 0;
